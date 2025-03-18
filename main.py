@@ -1,46 +1,60 @@
 from fastapi import FastAPI, File, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
-from textblob import TextBlob
 from io import BytesIO
-from fastapi.responses import StreamingResponse
+from textblob import TextBlob
 
 app = FastAPI()
 
-@app.get("/")
-def home():
-    return {"message": "Sentiment Analysis API is Running!"}
+# ✅ Fixing CORS Issue
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Change to specific domains in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.post("/upload-excel/")
-async def process_excel(file: UploadFile = File(...)):
+async def upload_excel(file: UploadFile = File(...)):
     try:
-        # Read the uploaded file
+        # Read the uploaded Excel file
         contents = await file.read()
-        excel_data = pd.read_excel(BytesIO(contents))
+        df = pd.read_excel(BytesIO(contents))
 
-        # Check if 'Feedback' column exists
-        if 'Feedback' not in excel_data.columns:
-            return {"error": "Column A must have 'Feedback' as the header."}
+        # Check if Column A exists
+        if df.shape[1] < 1:
+            return {"error": "Column A (Feedback) is missing"}
+
+        # Rename Column A to 'Feedback'
+        df.rename(columns={df.columns[0]: "Feedback"}, inplace=True)
 
         # Perform Sentiment Analysis
         sentiments = []
         scores = []
-        
-        for feedback in excel_data['Feedback']:
-            analysis = TextBlob(str(feedback))
-            sentiment_score = analysis.sentiment.polarity  # Score between -1 to 1
-            sentiments.append("Positive" if sentiment_score > 0 else "Negative")
-            scores.append(sentiment_score)
+        for feedback in df["Feedback"]:
+            if pd.isna(feedback):  # Handle empty cells
+                sentiments.append("Neutral")
+                scores.append(0)
+            else:
+                sentiment_score = TextBlob(str(feedback)).sentiment.polarity
+                sentiments.append("Positive" if sentiment_score > 0 else "Negative" if sentiment_score < 0 else "Neutral")
+                scores.append(sentiment_score)
 
-        # Add results to new columns
-        excel_data["Sentiment"] = sentiments
-        excel_data["Sentiment Score"] = scores
+        # Add Sentiment Results to DataFrame
+        df["Sentiment"] = sentiments
+        df["Sentiment Score"] = scores
 
         # Save updated file
         output = BytesIO()
-        excel_data.to_excel(output, index=False, engine='openpyxl')
+        df.to_excel(output, index=False)
         output.seek(0)
 
-        return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=sentiment_feedback.xlsx"})
-
+        return {
+            "filename": "updated_feedback.xlsx",
+            "message": "File processed successfully",
+            "data": df.to_dict(orient="records"),
+        }
     except Exception as e:
         return {"error": str(e)}
+
