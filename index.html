@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Feedback Sentiment Analyzer</title>
+</head>
+<body>
+    <h2>Upload an Excel File (Feedback in Column A)</h2>
+    <input type="file" id="fileInput">
+    <button onclick="uploadFile()">Upload & Analyze</button>
+
+    <script>
+        async function uploadFile() {
+            let fileInput = document.getElementById("fileInput");
+            let formData = new FormData();
+            formData.append("file", fileInput.files[0]);
+
+            try {
+                let response = await fetch("https://sentiment-api.onrender.com/upload-excel/", {
+                    method: "POST",
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error("File processing failed");
+                }
+
+                // Handle Excel File Response
+                let blob = await response.blob();
+                let downloadUrl = window.URL.createObjectURL(blob);
+                let a = document.createElement("a");
+                a.href = downloadUrl;
+                a.download = "sentiment_feedback.xlsx";
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+
+                alert("Sentiment Analysis Completed! Downloading...");
+            } catch (error) {
+                console.error("Error:", error);
+                alert("Error processing file.");
+            }
+        }
+    </script>
+</body>
+</html>
