@@ -1,36 +1,61 @@
-from fastapi import FastAPI, File, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, File, UploadFile, Response
+from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
-import os
-import shutil
+from io import BytesIO
+from textblob import TextBlob
+import openpyxl  # Ensure openpyxl is installed
 
 app = FastAPI()
 
-def remove_windows_block(file_path):
-    """Remove Windows security block from the file"""
-    temp_file = file_path + "_safe.xlsx"  # Create a temporary copy
-    shutil.copy2(file_path, temp_file)  # Copy file to a new one
-    os.remove(file_path)  # Delete the old file
-    os.rename(temp_file, file_path)  # Rename temp file back to original
+# ✅ CORS Fix
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Change to specific domains in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-@app.post("/process/")
-async def process_file(file: UploadFile = File(...)):
+@app.post("/upload-excel/")
+async def upload_excel(file: UploadFile = File(...)):
     try:
-        # Read the uploaded Excel file
-        df = pd.read_excel(file.file)
-        
-        # Example Processing: Convert text to uppercase in Column A
-        if 'A' in df.columns:
-            df['A'] = df['A'].astype(str).str.upper()
-        
-        # Save processed file
-        output_file = "processed_feedback.xlsx"
-        df.to_excel(output_file, index=False)
-        
-        # Remove Windows Security Block
-        remove_windows_block(output_file)
-        
-        return FileResponse(output_file, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename="processed_feedback.xlsx")
-    
+        # ✅ Read the uploaded Excel file
+        contents = await file.read()
+        input_stream = BytesIO(contents)
+        df = pd.read_excel(input_stream, engine="openpyxl")
+
+        # ✅ Ensure Column A (Feedback) exists
+        if df.shape[1] < 1:
+            return {"error": "Column A (Feedback) is missing"}
+
+        # ✅ Rename the first column as "Feedback"
+        df.rename(columns={df.columns[0]: "Feedback"}, inplace=True)
+
+        # ✅ Sentiment Analysis Processing
+        df["Sentiment"] = df["Feedback"].apply(lambda x: (
+            "Positive" if TextBlob(str(x)).sentiment.polarity > 0 
+            else "Negative" if TextBlob(str(x)).sentiment.polarity < 0 
+            else "Neutral"
+        ))
+        df["Sentiment Score"] = df["Feedback"].apply(lambda x: TextBlob(str(x)).sentiment.polarity)
+
+        # ✅ Save the updated file to a BytesIO object
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="Sheet1")
+            writer.close()  # ✅ Ensure data is properly flushed
+
+        output.seek(0)  # ✅ Reset stream position
+
+        # ✅ Return file as an HTTP response
+        return Response(
+            content=output.getvalue(),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": "attachment; filename=sentiment_feedback.xlsx",
+                "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            }
+        )
+
     except Exception as e:
         return {"error": str(e)}
