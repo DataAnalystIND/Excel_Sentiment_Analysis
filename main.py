@@ -20,7 +20,7 @@ async def upload_excel(file: UploadFile = File(...)):
     try:
         # Read the uploaded Excel file
         contents = await file.read()
-        df = pd.read_excel(BytesIO(contents))
+        df = pd.read_excel(BytesIO(contents), engine="openpyxl")  # Use openpyxl for better compatibility
 
         # Check if Column A (Feedback) exists
         if df.shape[1] < 1:
@@ -39,10 +39,10 @@ async def upload_excel(file: UploadFile = File(...)):
 
         # Save the updated file to a BytesIO object
         output = BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            df.to_excel(writer, index=False)
-
-        output.seek(0)
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="Sheet1")
+        
+        output.seek(0)  # Move pointer to the start
 
         # Return the processed Excel file as a downloadable response
         headers = {
