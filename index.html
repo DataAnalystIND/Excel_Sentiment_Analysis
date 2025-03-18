@@ -17,7 +17,7 @@
             formData.append("file", fileInput.files[0]);
 
             try {
-                let response = await fetch("https://sentiment-api.onrender.com/upload-excel/", {
+                let response = await fetch("https://excel-sentiment-analysis-final.onrender.com/upload-excel/", {
                     method: "POST",
                     body: formData
                 });
