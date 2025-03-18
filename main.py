@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, Response
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 from io import BytesIO
@@ -22,7 +22,7 @@ async def upload_excel(file: UploadFile = File(...)):
         contents = await file.read()
         df = pd.read_excel(BytesIO(contents))
 
-        # Check if Column A exists
+        # Check if Column A (Feedback) exists
         if df.shape[1] < 1:
             return {"error": "Column A (Feedback) is missing"}
 
@@ -30,31 +30,26 @@ async def upload_excel(file: UploadFile = File(...)):
         df.rename(columns={df.columns[0]: "Feedback"}, inplace=True)
 
         # Perform Sentiment Analysis
-        sentiments = []
-        scores = []
-        for feedback in df["Feedback"]:
-            if pd.isna(feedback):  # Handle empty cells
-                sentiments.append("Neutral")
-                scores.append(0)
-            else:
-                sentiment_score = TextBlob(str(feedback)).sentiment.polarity
-                sentiments.append("Positive" if sentiment_score > 0 else "Negative" if sentiment_score < 0 else "Neutral")
-                scores.append(sentiment_score)
+        df["Sentiment"] = df["Feedback"].apply(lambda x: (
+            "Positive" if TextBlob(str(x)).sentiment.polarity > 0 
+            else "Negative" if TextBlob(str(x)).sentiment.polarity < 0 
+            else "Neutral"
+        ))
+        df["Sentiment Score"] = df["Feedback"].apply(lambda x: TextBlob(str(x)).sentiment.polarity)
 
-        # Add Sentiment Results to DataFrame
-        df["Sentiment"] = sentiments
-        df["Sentiment Score"] = scores
-
-        # Save updated file
+        # Save the updated file to a BytesIO object
         output = BytesIO()
-        df.to_excel(output, index=False)
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False)
+
         output.seek(0)
 
-        return {
-            "filename": "updated_feedback.xlsx",
-            "message": "File processed successfully",
-            "data": df.to_dict(orient="records"),
+        # Return the processed Excel file as a downloadable response
+        headers = {
+            "Content-Disposition": "attachment; filename=updated_feedback.xlsx",
+            "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         }
+        return Response(content=output.getvalue(), headers=headers, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
     except Exception as e:
         return {"error": str(e)}
-
