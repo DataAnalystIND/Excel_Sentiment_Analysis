@@ -1,40 +1,65 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, File, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 from io import BytesIO
-from fastapi.responses import Response
-import uvicorn
+from textblob import TextBlob
+from fastapi.responses import StreamingResponse
 
 app = FastAPI()
+
+# ✅ Fixing CORS Issue
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Change to specific domains in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.post("/upload-excel/")
 async def upload_excel(file: UploadFile = File(...)):
     try:
-        # Read uploaded file
-        df = pd.read_excel(file.file, engine="openpyxl")
+        # Read the uploaded Excel file
+        contents = await file.read()
+        df = pd.read_excel(BytesIO(contents), engine='openpyxl')
 
-        # Validate if the required column exists
-        if "Feedback" not in df.columns:
-            return {"error": "Column 'Feedback' not found in the uploaded file"}
+        # Check if Column A exists
+        if df.shape[1] < 1:
+            return {"error": "Column A (Feedback) is missing"}
 
-        # Apply simple sentiment analysis
-        df["Sentiment"] = df["Feedback"].astype(str).apply(lambda x: "Positive" if "good" in x.lower() else "Negative")
+        # Rename Column A to 'Feedback'
+        df.rename(columns={df.columns[0]: "Feedback"}, inplace=True)
 
-        # Save processed file to memory
+        # Perform Sentiment Analysis
+        sentiments = []
+        scores = []
+        for feedback in df["Feedback"]:
+            if pd.isna(feedback):  # Handle empty cells
+                sentiments.append("Neutral")
+                scores.append(0)
+            else:
+                sentiment_score = TextBlob(str(feedback)).sentiment.polarity
+                sentiments.append("Positive" if sentiment_score > 0 else "Negative" if sentiment_score < 0 else "Neutral")
+                scores.append(sentiment_score)
+
+        # Add Sentiment Results to DataFrame
+        df.insert(1, "Sentiment", sentiments)
+        df.insert(2, "Sentiment Score", scores)
+
+        # Save updated file
         output = BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl", mode="xlsx") as writer:
-            df.to_excel(writer, index=False, sheet_name="Sentiment Analysis")
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name="Sheet1")
+            writer.book.close()
 
-        # Ensure file is properly written
         output.seek(0)
 
-        return Response(
-            output.read(),
+        # Return file as download
+        return StreamingResponse(
+            output,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": "attachment; filename=sentiment_feedback.xlsx"},
+            headers={"Content-Disposition": "attachment; filename=sentiment_feedback.xlsx"}
         )
 
     except Exception as e:
         return {"error": str(e)}
-
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=10000)
