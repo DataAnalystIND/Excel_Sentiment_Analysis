@@ -1,73 +1,40 @@
-from fastapi import FastAPI, File, UploadFile, Response
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, UploadFile, File
 import pandas as pd
 from io import BytesIO
-from textblob import TextBlob
-import openpyxl  # Ensure openpyxl is installed
+from fastapi.responses import Response
+import uvicorn
 
 app = FastAPI()
 
-# ✅ CORS Setup
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Change to specific frontend URLs in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# ✅ Root Endpoint (Prevents 404 on "/")
-@app.get("/")
-async def read_root():
-    return {"message": "FastAPI Sentiment Analysis is running!"}
-
-# ✅ Handle Favicon Request (Prevents 404 for favicon.ico)
-@app.get("/favicon.ico")
-async def favicon():
-    return Response(status_code=204)  # No Content
-
-# ✅ File Upload & Sentiment Analysis
 @app.post("/upload-excel/")
 async def upload_excel(file: UploadFile = File(...)):
     try:
-        # ✅ Read the uploaded Excel file
-        contents = await file.read()
-        input_stream = BytesIO(contents)
-        df = pd.read_excel(input_stream, engine="openpyxl")
+        # Read the uploaded Excel file
+        df = pd.read_excel(file.file, engine="openpyxl")
 
-        # ✅ Ensure Column A (Feedback) exists
-        if df.shape[1] < 1:
-            return {"error": "Column A (Feedback) is missing"}
+        # Ensure column exists
+        if "Feedback" not in df.columns:
+            return {"error": "Column 'Feedback' not found in the uploaded file"}
 
-        # ✅ Rename the first column as "Feedback"
-        df.rename(columns={df.columns[0]: "Feedback"}, inplace=True)
+        # Perform simple sentiment analysis
+        df["Sentiment"] = df["Feedback"].apply(lambda x: "Positive" if "good" in str(x).lower() else "Negative")
 
-        # ✅ Sentiment Analysis Processing
-        df["Sentiment"] = df["Feedback"].apply(lambda x: (
-            "Positive" if TextBlob(str(x)).sentiment.polarity > 0 
-            else "Negative" if TextBlob(str(x)).sentiment.polarity < 0 
-            else "Neutral"
-        ))
-        df["Sentiment Score"] = df["Feedback"].apply(lambda x: TextBlob(str(x)).sentiment.polarity)
-
-        # ✅ Save the updated file to a BytesIO object
+        # Save processed file to memory
         output = BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df.to_excel(writer, index=False, sheet_name="Sheet1")
-            writer.close()  # ✅ Ensure data is properly flushed
+            df.to_excel(writer, index=False)
 
-        output.seek(0)  # ✅ Reset stream position
+        # Ensure data is written before sending response
+        output.seek(0)
 
-        # ✅ Return file as an HTTP response
         return Response(
-            content=output.getvalue(),
+            output.getvalue(),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={
-                "Content-Disposition": "attachment; filename=sentiment_feedback.xlsx",
-                "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            }
+            headers={"Content-Disposition": "attachment; filename=sentiment_feedback.xlsx"},
         )
 
     except Exception as e:
-        return {"error": f"Processing failed: {str(e)}"}
+        return {"error": str(e)}
 
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=10000)
