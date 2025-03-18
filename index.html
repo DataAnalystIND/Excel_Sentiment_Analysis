@@ -15,24 +15,24 @@
         }
         h1 {
             font-family: 'League Spartan', sans-serif;
-            font-size: 64px; /* REAL BIG FONT */
+            font-size: 64px;
             font-weight: 900;
             color: white;
-            margin-bottom: 50px; /* Increased Space Below Heading */
+            margin-bottom: 50px;
         }
         .container {
-            background: #daf0ff; /* Container Background Color */
+            background: #daf0ff;
             padding: 50px;
             border-radius: 15px;
             box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.2);
             display: inline-block;
             color: #333;
-            max-width: 600px; /* Increased Width */
-            min-height: 250px; /* Increased Height */
+            max-width: 600px;
+            min-height: 250px;
         }
         .description {
             font-size: 20px;
-            margin-bottom: 15px; /* Space between the two lines */
+            margin-bottom: 15px;
         }
         .file-input-container {
             display: flex;
@@ -60,7 +60,6 @@
             background-color: #0056b3;
             color: white;
         }
-        /* Footer Styling */
         .footer {
             margin-top: 50px;
             font-size: 14px;
@@ -107,7 +106,7 @@
             formData.append("file", fileInput.files[0]);
 
             try {
-                let response = await fetch("https://sentiment-api.onrender.com/upload-excel/", {
+                let response = await fetch("https://excel-sentiment-analysis.onrender.com/upload-excel/", {
                     method: "POST",
                     body: formData
                 });
@@ -120,7 +119,7 @@
                 let downloadUrl = window.URL.createObjectURL(blob);
                 let a = document.createElement("a");
                 a.href = downloadUrl;
-                a.download = "updated_feedback.xlsx";
+                a.download = "sentiment_feedback.xlsx";
                 document.body.appendChild(a);
                 a.click();
                 a.remove();
