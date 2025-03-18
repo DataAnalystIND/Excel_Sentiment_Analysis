@@ -1,47 +1,36 @@
+from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import FileResponse
 import pandas as pd
 import os
-from flask import Flask, request, send_file
+import shutil
 
-app = Flask(__name__)
+app = FastAPI()
 
-UPLOAD_FOLDER = "uploads"
-PROCESSED_FOLDER = "processed"
+def remove_windows_block(file_path):
+    """Remove Windows security block from the file"""
+    temp_file = file_path + "_safe.xlsx"  # Create a temporary copy
+    shutil.copy2(file_path, temp_file)  # Copy file to a new one
+    os.remove(file_path)  # Delete the old file
+    os.rename(temp_file, file_path)  # Rename temp file back to original
 
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(PROCESSED_FOLDER, exist_ok=True)
-
-@app.route("/upload", methods=["POST"])
-def upload_file():
-    if "file" not in request.files:
-        return "No file uploaded", 400
-
-    file = request.files["file"]
-    if file.filename == "":
-        return "No selected file", 400
-
-    file_path = os.path.join(UPLOAD_FOLDER, file.filename)
-    file.save(file_path)
-
+@app.post("/process/")
+async def process_file(file: UploadFile = File(...)):
     try:
-        # Read the Excel file correctly
-        df = pd.read_excel(file_path, engine="openpyxl")
-
-        # Process (example: add a column)
-        df["Processed_Column"] = "Processed"
-
-        # Save with explicit format to prevent corruption
-        processed_path = os.path.join(PROCESSED_FOLDER, "processed_" + file.filename)
-        df.to_excel(processed_path, index=False, engine="openpyxl")
-
-        # Ensure Windows doesn't block the file
-        final_path = processed_path.replace(".xlsx", "_safe.xlsx")
-        os.rename(processed_path, final_path)
-
-        return send_file(final_path, as_attachment=True)
-
+        # Read the uploaded Excel file
+        df = pd.read_excel(file.file)
+        
+        # Example Processing: Convert text to uppercase in Column A
+        if 'A' in df.columns:
+            df['A'] = df['A'].astype(str).str.upper()
+        
+        # Save processed file
+        output_file = "processed_feedback.xlsx"
+        df.to_excel(output_file, index=False)
+        
+        # Remove Windows Security Block
+        remove_windows_block(output_file)
+        
+        return FileResponse(output_file, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename="processed_feedback.xlsx")
+    
     except Exception as e:
-        return f"Error processing file: {str(e)}", 500
-
-if __name__ == "__main__":
-    app.run(debug=True)
-
+        return {"error": str(e)}
