@@ -7,15 +7,26 @@ import openpyxl  # Ensure openpyxl is installed
 
 app = FastAPI()
 
-# ✅ CORS Fix
+# ✅ CORS Setup
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change to specific domains in production
+    allow_origins=["*"],  # Change to specific frontend URLs in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# ✅ Root Endpoint (Prevents 404 on "/")
+@app.get("/")
+async def read_root():
+    return {"message": "FastAPI Sentiment Analysis is running!"}
+
+# ✅ Handle Favicon Request (Prevents 404 for favicon.ico)
+@app.get("/favicon.ico")
+async def favicon():
+    return Response(status_code=204)  # No Content
+
+# ✅ File Upload & Sentiment Analysis
 @app.post("/upload-excel/")
 async def upload_excel(file: UploadFile = File(...)):
     try:
@@ -58,4 +69,5 @@ async def upload_excel(file: UploadFile = File(...)):
         )
 
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": f"Processing failed: {str(e)}"}
+
