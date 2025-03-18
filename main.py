@@ -1,50 +1,36 @@
 from fastapi import FastAPI, File, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 import pandas as pd
-from io import BytesIO
-from textblob import TextBlob
-from fastapi.responses import StreamingResponse
+import os
+import shutil
 
 app = FastAPI()
 
-# ✅ CORS Middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+def remove_windows_block(file_path):
+    """Remove Windows security block from the file"""
+    temp_file = file_path + "_safe.xlsx"  # Create a temporary copy
+    shutil.copy2(file_path, temp_file)  # Copy file to a new one
+    os.remove(file_path)  # Delete the old file
+    os.rename(temp_file, file_path)  # Rename temp file back to original
 
-@app.post("/upload-excel/")
-async def upload_excel(file: UploadFile = File(...)):
+@app.post("/process/")
+async def process_file(file: UploadFile = File(...)):
     try:
-        # Read the uploaded file
-        contents = await file.read()
-        df = pd.read_excel(BytesIO(contents), engine='openpyxl')
-
-        # ✅ Ensure Column A Exists
-        if df.shape[1] < 1:
-            return {"error": "Column A (Feedback) is missing"}
-
-        # ✅ Rename Column A for clarity
-        df.rename(columns={df.columns[0]: "Feedback"}, inplace=True)
-
-        # ✅ Perform Sentiment Analysis
-        df["Sentiment"] = df["Feedback"].apply(lambda x: TextBlob(str(x)).sentiment.polarity)
-        df["Sentiment Label"] = df["Sentiment"].apply(lambda x: "Positive" if x > 0 else "Negative" if x < 0 else "Neutral")
-
-        # ✅ Save the processed file correctly
-        output = BytesIO()
-        df.to_excel(output, index=False, engine="openpyxl")
-        output.seek(0)
-
-        # ✅ Return file as a download response
-        return StreamingResponse(
-            output,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": "attachment; filename=processed_feedback.xlsx"}
-        )
-
+        # Read the uploaded Excel file
+        df = pd.read_excel(file.file)
+        
+        # Example Processing: Convert text to uppercase in Column A
+        if 'A' in df.columns:
+            df['A'] = df['A'].astype(str).str.upper()
+        
+        # Save processed file
+        output_file = "processed_feedback.xlsx"
+        df.to_excel(output_file, index=False)
+        
+        # Remove Windows Security Block
+        remove_windows_block(output_file)
+        
+        return FileResponse(output_file, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename="processed_feedback.xlsx")
+    
     except Exception as e:
         return {"error": str(e)}
